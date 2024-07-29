@@ -1,5 +1,4 @@
 use chrono::{DateTime, Datelike, Local, TimeZone};
-use ctrlc;
 use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
 use std::sync::mpsc::channel;
 use std::{
@@ -7,6 +6,7 @@ use std::{
     thread,
     time::Duration,
 };
+use tracing::info;
 use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
@@ -39,10 +39,11 @@ fn start_chrome_driver() -> anyhow::Result<Child> {
 // let's set up the sequence of steps we want the browser to take
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let (tx, rx) = channel();
 
     ctrlc::set_handler(move || {
-        println!("calling ctrl+c");
+        info!("termination handler called");
         tx.send(()).expect("Could not send signal on channel.");
     })
     .expect("Error setting Ctrl-C handler");
@@ -141,10 +142,10 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-        println!("latest match = {latest_match:?}");
+        info!("latest match = {latest_match:?}");
 
         if rx.try_recv().is_ok() {
-            println!("Exitting ...");
+            info!("exitting the main loop");
             break;
         }
 
