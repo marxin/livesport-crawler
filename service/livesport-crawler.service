@@ -1,0 +1,12 @@
+[Unit]
+Description=Script for crawling of livescore.com site
+
+[Service]
+Type=simple
+User=marxin
+Group=marxin
+ExecStart=/home/marxin/bin/livesport-crawler
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
