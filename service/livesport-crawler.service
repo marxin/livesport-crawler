@@ -5,7 +5,7 @@ Description=Script for crawling of livescore.com site
 Type=simple
 User=marxin
 Group=marxin
-ExecStart=/home/marxin/bin/livesport-crawler
+ExecStart=/home/marxin/livesport-crawler
 Restart=on-failure
 
 [Install]

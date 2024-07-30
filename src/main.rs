@@ -14,7 +14,7 @@ use url::Url;
 const DRIVER_PORT: u16 = 9515;
 const TEAM_NAME: &str = "Sparta Praha";
 const TEAM_URL: &str = "https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/";
-const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -40,6 +40,9 @@ fn start_driver() -> anyhow::Result<Child> {
 async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
     let base_url = Url::parse(TEAM_URL)?;
     client.goto(base_url.join("vysledky")?.as_str()).await?;
+
+    // wait for a reasonable time before we inspect DOM
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let match_rows = client.find_all(Locator::Css(".event__match")).await?;
     let last_match_row = &match_rows
