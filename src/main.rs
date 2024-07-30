@@ -24,16 +24,15 @@ struct GameResult {
     event_date: DateTime<Local>,
 }
 
-fn start_chrome_driver() -> anyhow::Result<Child> {
-    // start chromedriver
-    let chrome_driver = Command::new("chromedriver")
+fn start_driver() -> anyhow::Result<Child> {
+    let driver = Command::new("chromedriver")
         .arg(format!("--port={}", DRIVER_PORT))
         .stderr(Stdio::null())
         .stdout(Stdio::null())
         .spawn()?;
 
     thread::sleep(Duration::from_millis(300));
-    Ok(chrome_driver)
+    Ok(driver)
 }
 
 // let's set up the sequence of steps we want the browser to take
@@ -48,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let mut chrome_driver = start_chrome_driver()?;
+    let mut driver = start_driver()?;
 
     let base_url = Url::parse(TEAM_URL)?;
     let cap: Capabilities =
@@ -152,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(REFRESH_INTERVAL).await;
     }
 
-    chrome_driver.kill().unwrap();
+    driver.kill().unwrap();
 
     c.close().await?;
 
