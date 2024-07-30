@@ -2,12 +2,12 @@ use chrono::LocalResult::Single;
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use fantoccini::Client;
 use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
-use std::sync::mpsc::channel;
 use std::{
     process::{Child, Command, Stdio},
     thread,
     time::Duration,
 };
+use tokio::signal;
 use tracing::{info, warn};
 use url::Url;
 
@@ -93,6 +93,8 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
         .map(|x| x.parse::<u32>())
         .collect::<Result<Vec<_>, _>>()?;
 
+    client.goto("about:blank").await?;
+
     let now = Local::now();
     // TODO: Properly map an error if the result is equal to LocalResult::Ambiguous!
     let event_date = now.timezone().with_ymd_and_hms(
@@ -132,13 +134,6 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    let (tx, rx) = channel();
-
-    ctrlc::set_handler(move || {
-        info!("termination handler called");
-        tx.send(()).expect("Could not send signal on channel.");
-    })
-    .expect("Error setting Ctrl-C handler");
 
     let mut driver = start_driver()?;
 
@@ -161,12 +156,14 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        if rx.try_recv().is_ok() {
-            info!("exitting the main loop");
-            break;
+        tokio::select! {
+            _ = signal::ctrl_c() => {
+                info!("exitting the main loop");
+                break;
+            },
+            _ = tokio::time::sleep(REFRESH_INTERVAL) => {
+            }
         }
-
-        tokio::time::sleep(REFRESH_INTERVAL).await;
     }
 
     driver.kill().unwrap();
