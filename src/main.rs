@@ -1,7 +1,11 @@
 use chrono::LocalResult::Single;
 use chrono::{DateTime, Datelike, Local, TimeZone};
+use clap::Parser;
 use fantoccini::Client;
 use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
+use serde::Serialize;
+use std::fs::File;
+use std::path::PathBuf;
 use std::{
     process::{Child, Command, Stdio},
     thread,
@@ -14,16 +18,27 @@ use url::Url;
 const DRIVER_PORT: u16 = 9515;
 const TEAM_NAME: &str = "Sparta Praha";
 const TEAM_URL: &str = "https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/";
-const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct GameResult {
     my_team: String,
     my_team_score: u32,
     opponent_team: String,
     opponent_team_score: u32,
     event_date: DateTime<Local>,
+    generated: DateTime<Local>,
+}
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// JSON output file
+    output: PathBuf,
+
+    /// Refresh interval
+    #[arg(short, long, default_value_t = 30)]
+    refresh: u64,
 }
 
 fn start_driver() -> anyhow::Result<Child> {
@@ -116,6 +131,7 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
             opponent_team: away_team,
             opponent_team_score: away_score,
             event_date,
+            generated: now,
         }
     } else {
         GameResult {
@@ -124,6 +140,7 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
             opponent_team: home_team,
             opponent_team_score: home_score,
             event_date,
+            generated: now,
         }
     };
 
@@ -134,6 +151,8 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    let cli = Cli::parse();
 
     let mut driver = start_driver()?;
 
@@ -150,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         match get_score(&mut c).await {
             Ok(latest_match) => {
                 info!("latest match = {latest_match:?}");
+                serde_json::to_writer_pretty(File::create(cli.output.clone())?, &latest_match)?;
             }
             Err(error) => {
                 warn!("got error: {error}");
@@ -161,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
                 info!("exitting the main loop");
                 break;
             },
-            _ = tokio::time::sleep(REFRESH_INTERVAL) => {
+            _ = tokio::time::sleep(Duration::from_secs(cli.refresh)) => {
             }
         }
     }
