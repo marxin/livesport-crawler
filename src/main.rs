@@ -13,10 +13,9 @@ use std::{
 };
 use tokio::signal;
 use tracing::{info, warn};
+use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
-const TEAM_NAME: &str = "Sparta Praha";
-const TEAM_URL: &str = "https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/";
 
 #[derive(Debug, Serialize)]
 enum GameTime {
@@ -40,6 +39,12 @@ struct GameResult {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Livescore URL of the team
+    url: Url,
+
+    /// Team name
+    team_name: String,
+
     /// JSON output file
     output: PathBuf,
 
@@ -86,8 +91,8 @@ async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
     }
 }
 
-async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
-    client.goto(TEAM_URL).await?;
+async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::Result<GameResult> {
+    client.goto(url.as_str()).await?;
 
     // wait for a reasonable time before we inspect DOM
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -143,7 +148,7 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
 
     let now = Local::now();
 
-    let latest_match = if home_team.starts_with(TEAM_NAME) {
+    let latest_match = if home_team.starts_with(team_name) {
         GameResult {
             my_team: home_team,
             my_team_score: home_score,
@@ -185,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("failed to connect to WebDriver");
 
     loop {
-        match get_score(&mut c).await {
+        match get_score(&mut c, &cli.url, &cli.team_name).await {
             Ok(latest_match) => {
                 info!("latest match = {latest_match:?}");
                 serde_json::to_writer_pretty(File::create(cli.output.clone())?, &latest_match)?;
