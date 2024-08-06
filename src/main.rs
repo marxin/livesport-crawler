@@ -1,6 +1,6 @@
-use chrono::LocalResult::Single;
-use chrono::{DateTime, Datelike, Local, TimeZone};
+use chrono::{DateTime, Local};
 use clap::Parser;
+use fantoccini::elements::Element;
 use fantoccini::Client;
 use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
 use serde::Serialize;
@@ -19,6 +19,13 @@ const DRIVER_PORT: u16 = 9515;
 const TEAM_NAME: &str = "Sparta Praha";
 const TEAM_URL: &str = "https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/";
 
+#[derive(Debug, Serialize)]
+enum GameTime {
+    Played,
+    BreakAfter(u32),
+    Playing(u32),
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct GameResult {
@@ -26,7 +33,7 @@ struct GameResult {
     my_team_score: u32,
     opponent_team: String,
     opponent_team_score: u32,
-    event_date: DateTime<Local>,
+    game_time: GameTime,
     generated: DateTime<Local>,
 }
 
@@ -52,14 +59,42 @@ fn start_driver() -> anyhow::Result<Child> {
     Ok(driver)
 }
 
+const PERIOD_MINUTES: u32 = 20;
+
+async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
+    let event_parts = row.find_all(Locator::Css(".event__part--home")).await?;
+    let mut periods = 0;
+    for part in event_parts {
+        if part.text().await.is_ok_and(|text| !text.is_empty()) {
+            periods += 1;
+        }
+    }
+    assert!(periods >= 1);
+    let mut minute = PERIOD_MINUTES * (periods - 1);
+
+    let event_time_element = row.find(Locator::Css(".eventTime")).await;
+    if let Ok(event_time_element) = event_time_element {
+        minute += event_time_element
+            .text()
+            .await
+            .map_or(0, |text| text.parse().unwrap());
+        Ok(GameTime::Playing(minute))
+    } else {
+        // It must be break otherwise
+        minute += PERIOD_MINUTES;
+        Ok(GameTime::BreakAfter(minute))
+    }
+}
+
 async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
     let base_url = Url::parse(TEAM_URL)?;
-    client.goto(base_url.join("vysledky")?.as_str()).await?;
+    client.goto(base_url.as_str()).await?;
 
     // wait for a reasonable time before we inspect DOM
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let match_rows = client.find_all(Locator::Css(".event__match")).await?;
+
     let last_match_row = &match_rows
         .first()
         .ok_or(anyhow::anyhow!("could not find .event__match element"))?;
@@ -90,39 +125,19 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
         .await?
         .parse::<u32>()?;
 
-    let event_time = last_match_row
-        .find(Locator::Css(".event__time"))
-        .await?
-        .text()
-        .await?;
-    let event_time = event_time
-        .split('\n')
-        .next()
-        .ok_or(anyhow::anyhow!(".event__time is empty"))?
-        .to_string();
-
-    // TODO: we assume the last match happened in the same year!
-    let event_time_parts = event_time
-        .split(['.', ' ', ':'])
-        .filter(|s| !s.is_empty())
-        .map(|x| x.parse::<u32>())
-        .collect::<Result<Vec<_>, _>>()?;
+    let is_live = last_match_row
+        .attr("class")
+        .await
+        .is_ok_and(|attr| attr.is_some_and(|cname| cname.contains("event__match--live")));
+    let game_time = if is_live {
+        get_minute_of_game(last_match_row).await?
+    } else {
+        GameTime::Played
+    };
 
     client.goto("about:blank").await?;
 
     let now = Local::now();
-    // TODO: Properly map an error if the result is equal to LocalResult::Ambiguous!
-    let event_date = now.timezone().with_ymd_and_hms(
-        now.year(),
-        event_time_parts[1],
-        event_time_parts[0],
-        event_time_parts[2],
-        event_time_parts[3],
-        0,
-    );
-    let Single(event_date) = event_date else {
-        anyhow::bail!("ambigous or none date: {event_date:?}");
-    };
 
     let latest_match = if home_team.starts_with(TEAM_NAME) {
         GameResult {
@@ -130,8 +145,8 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
             my_team_score: home_score,
             opponent_team: away_team,
             opponent_team_score: away_score,
-            event_date,
             generated: now,
+            game_time,
         }
     } else {
         GameResult {
@@ -139,8 +154,8 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
             my_team_score: away_score,
             opponent_team: home_team,
             opponent_team_score: home_score,
-            event_date,
             generated: now,
+            game_time,
         }
     };
 
