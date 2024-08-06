@@ -95,7 +95,7 @@ async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::R
     client.goto(url.as_str()).await?;
 
     // wait for a reasonable time before we inspect DOM
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let match_rows = client.find_all(Locator::Css(".event__match")).await?;
 
