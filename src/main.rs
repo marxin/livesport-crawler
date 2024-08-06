@@ -12,7 +12,8 @@ use std::{
     time::Duration,
 };
 use tokio::signal;
-use tracing::{info, warn};
+use tokio::time::sleep;
+use tracing::{debug, info, warn};
 use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
@@ -91,16 +92,31 @@ async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
     }
 }
 
+async fn get_latest_match_element(client: &mut Client) -> anyhow::Result<Option<Element>> {
+    for _ in 0..10 {
+        sleep(Duration::from_millis(200)).await;
+        let last_match_row = client
+            .find_all(Locator::Css(".event__match"))
+            .await?
+            .into_iter()
+            .next();
+        if last_match_row.is_some() {
+            return Ok(last_match_row);
+        }
+        debug!("sleeping in find_all for .event__match");
+    }
+
+    Ok(None)
+}
+
 async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::Result<GameResult> {
     client.goto(url.as_str()).await?;
 
     // wait for a reasonable time before we inspect DOM
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let match_rows = client.find_all(Locator::Css(".event__match")).await?;
-
-    let last_match_row = &match_rows
-        .first()
+    let last_match_row = get_latest_match_element(client)
+        .await?
         .ok_or(anyhow::anyhow!("could not find .event__match element"))?;
 
     let home_team = last_match_row
@@ -137,7 +153,7 @@ async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::R
         .ok_or(anyhow::anyhow!("class attribute should not be empty"))?;
 
     let game_time = if last_match_class.contains("event__match--live") {
-        get_minute_of_game(last_match_row).await?
+        get_minute_of_game(&last_match_row).await?
     } else if last_match_class.contains("event__match--scheduled") {
         GameTime::WillBePlayed
     } else {
