@@ -13,7 +13,6 @@ use std::{
 };
 use tokio::signal;
 use tracing::{info, warn};
-use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
 const TEAM_NAME: &str = "Sparta Praha";
@@ -21,18 +20,19 @@ const TEAM_URL: &str = "https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/";
 
 #[derive(Debug, Serialize)]
 enum GameTime {
+    WillBePlayed,
     Played,
-    BreakAfter(u32),
-    Playing(u32),
+    BreakAfter(u64),
+    Playing(u64),
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct GameResult {
     my_team: String,
-    my_team_score: u32,
+    my_team_score: u64,
     opponent_team: String,
-    opponent_team_score: u32,
+    opponent_team_score: u64,
     game_time: GameTime,
     generated: DateTime<Local>,
 }
@@ -59,7 +59,7 @@ fn start_driver() -> anyhow::Result<Child> {
     Ok(driver)
 }
 
-const PERIOD_MINUTES: u32 = 20;
+const PERIOD_MINUTES: u64 = 20;
 
 async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
     let event_parts = row.find_all(Locator::Css(".event__part--home")).await?;
@@ -87,8 +87,7 @@ async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
 }
 
 async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
-    let base_url = Url::parse(TEAM_URL)?;
-    client.goto(base_url.as_str()).await?;
+    client.goto(TEAM_URL).await?;
 
     // wait for a reasonable time before we inspect DOM
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -116,21 +115,26 @@ async fn get_score(client: &mut Client) -> anyhow::Result<GameResult> {
         .await?
         .text()
         .await?
-        .parse::<u32>()?;
+        .parse()
+        .unwrap_or_default();
 
     let away_score = last_match_row
         .find(Locator::Css(".event__score--away"))
         .await?
         .text()
         .await?
-        .parse::<u32>()?;
+        .parse()
+        .unwrap_or_default();
 
-    let is_live = last_match_row
+    let last_match_class = last_match_row
         .attr("class")
-        .await
-        .is_ok_and(|attr| attr.is_some_and(|cname| cname.contains("event__match--live")));
-    let game_time = if is_live {
+        .await?
+        .ok_or(anyhow::anyhow!("class attribute should not be empty"))?;
+
+    let game_time = if last_match_class.contains("event__match--live") {
         get_minute_of_game(last_match_row).await?
+    } else if last_match_class.contains("event__match--scheduled") {
+        GameTime::WillBePlayed
     } else {
         GameTime::Played
     };
