@@ -1,4 +1,5 @@
-use chrono::{DateTime, Local};
+use anyhow::Context;
+use chrono::{DateTime, Local, NaiveTime};
 use clap::Parser;
 use fantoccini::elements::Element;
 use fantoccini::Client;
@@ -20,7 +21,7 @@ const DRIVER_PORT: u16 = 9515;
 
 #[derive(Debug, Serialize)]
 enum GameTime {
-    WillBePlayed,
+    WillBePlayed(Option<NaiveTime>),
     Played,
     BreakAfter(u64),
     Playing(u64),
@@ -152,10 +153,29 @@ async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::R
         .await?
         .ok_or(anyhow::anyhow!("class attribute should not be empty"))?;
 
+    let event_time_element = last_match_row.find(Locator::Css(".event__time")).await;
+    let event_time = if let Ok(event_time_element) = event_time_element {
+        let event_time = event_time_element.text().await?;
+        if event_time.split(' ').count() == 1 {
+            let parts = event_time
+                .split_once(':')
+                .context("time should be parsed")?;
+            NaiveTime::from_hms_opt(
+                parts.0.parse().context("hour cannot be parsed")?,
+                parts.1.parse().context("minute cannot be parsed")?,
+                0,
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let game_time = if last_match_class.contains("event__match--live") {
         get_minute_of_game(&last_match_row).await?
     } else if last_match_class.contains("event__match--scheduled") {
-        GameTime::WillBePlayed
+        GameTime::WillBePlayed(event_time)
     } else {
         GameTime::Played
     };
