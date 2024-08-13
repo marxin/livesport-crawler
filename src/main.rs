@@ -83,7 +83,7 @@ async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
         minute += event_time_element
             .text()
             .await
-            .map_or(0, |text| text.parse().unwrap());
+            .map_or(0, |text| text.parse().unwrap_or_default());
         Ok(GameTime::Playing(minute))
     } else {
         // It must be break otherwise
