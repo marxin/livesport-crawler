@@ -21,7 +21,7 @@ const DRIVER_PORT: u16 = 9515;
 
 #[derive(Debug, Serialize)]
 enum GameTime {
-    WillBePlayed(Option<(i64, i64)>),
+    WillBePlayed(Option<(u64, u64)>),
     Played,
     BreakAfter(u64),
     Playing(u64),
@@ -81,10 +81,12 @@ async fn get_minute_of_game(row: &Element) -> anyhow::Result<GameTime> {
 
     let event_time_element = row.find(Locator::Css(".eventTime")).await;
     if let Ok(event_time_element) = event_time_element {
-        minute += event_time_element
-            .text()
-            .await
-            .map_or(0, |text| text.parse().unwrap_or_default());
+        minute += event_time_element.text().await.map_or(0, |text| {
+            text.strip_suffix('\'')
+                .unwrap_or(&text)
+                .parse()
+                .unwrap_or_default()
+        });
         Ok(GameTime::Playing(minute))
     } else {
         // It must be break otherwise
@@ -189,9 +191,14 @@ async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::R
     let event_time_element = last_match_row.find(Locator::Css(".event__time")).await;
     let event_time = if let Ok(event_time_element) = event_time_element {
         let match_date_time = parse_datetime(&event_time_element.text().await?)?;
+        let now = Local::now().naive_local();
         debug!("Match will be played: {match_date_time}");
-        let delta = match_date_time - Local::now().naive_local();
-        Some((delta.num_hours(), delta.num_minutes() % 60))
+        if match_date_time < now {
+            Some((0, 0))
+        } else {
+            let delta = match_date_time - now;
+            Some((delta.num_hours() as u64, (delta.num_minutes() as u64) % 60))
+        }
     } else {
         None
     };
