@@ -1,4 +1,5 @@
-use chrono::{DateTime, Local};
+use anyhow::Context;
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use clap::Parser;
 use fantoccini::elements::Element;
 use fantoccini::Client;
@@ -20,7 +21,7 @@ const DRIVER_PORT: u16 = 9515;
 
 #[derive(Debug, Serialize)]
 enum GameTime {
-    WillBePlayed,
+    WillBePlayed(Option<(i64, i64)>),
     Played,
     BreakAfter(u64),
     Playing(u64),
@@ -109,6 +110,39 @@ async fn get_latest_match_element(client: &mut Client) -> anyhow::Result<Option<
     Ok(None)
 }
 
+fn parse_datetime(value: &str) -> anyhow::Result<NaiveDateTime> {
+    let parse_time = |time: &str| -> anyhow::Result<_> {
+        let time_parts = time.split_once(':').context("time should have one colon")?;
+        NaiveTime::from_hms_opt(
+            time_parts.0.parse().context("hour cannot be parsed")?,
+            time_parts.1.parse().context("minute cannot be parsed")?,
+            0,
+        )
+        .context("cannot parse NaiveTime")
+    };
+
+    let parse_date = |date: &str| -> anyhow::Result<_> {
+        let date_parts: Vec<_> = date.split('.').collect();
+        let day = date_parts.first().context("date: day part missing")?;
+        let month = date_parts.get(1).context("date: month part missing")?;
+        NaiveDate::from_ymd_opt(
+            Local::now().year(),
+            month.parse().context("month cannot be parsed")?,
+            day.parse().context("day cannot be parsed")?,
+        )
+        .context("cannot parse NaiveDate")
+    };
+
+    if let Some((date, time)) = value.split_once(' ') {
+        Ok(NaiveDateTime::new(parse_date(date)?, parse_time(time)?))
+    } else {
+        Ok(NaiveDateTime::new(
+            Local::now().date_naive(),
+            parse_time(value)?,
+        ))
+    }
+}
+
 async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::Result<GameResult> {
     client.goto(url.as_str()).await?;
 
@@ -152,10 +186,20 @@ async fn get_score(client: &mut Client, url: &Url, team_name: &str) -> anyhow::R
         .await?
         .ok_or(anyhow::anyhow!("class attribute should not be empty"))?;
 
+    let event_time_element = last_match_row.find(Locator::Css(".event__time")).await;
+    let event_time = if let Ok(event_time_element) = event_time_element {
+        let match_date_time = parse_datetime(&event_time_element.text().await?)?;
+        debug!("Match will be played: {match_date_time}");
+        let delta = match_date_time - Local::now().naive_local();
+        Some((delta.num_hours(), delta.num_minutes() % 60))
+    } else {
+        None
+    };
+
     let game_time = if last_match_class.contains("event__match--live") {
         get_minute_of_game(&last_match_row).await?
     } else if last_match_class.contains("event__match--scheduled") {
-        GameTime::WillBePlayed
+        GameTime::WillBePlayed(event_time)
     } else {
         GameTime::Played
     };
@@ -231,4 +275,28 @@ async fn main() -> anyhow::Result<()> {
     c.close().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_datetime() {
+        let today = Local::now();
+
+        assert_eq!(
+            parse_datetime("07.09. 18:00").unwrap().to_string(),
+            format!("{}-09-07 18:00:00", today.year())
+        );
+        assert_eq!(
+            parse_datetime("18:00").unwrap().to_string(),
+            format!(
+                "{}-{:02}-{:02} 18:00:00",
+                today.year(),
+                today.month(),
+                today.day()
+            )
+        );
+    }
 }
