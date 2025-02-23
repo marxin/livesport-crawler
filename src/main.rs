@@ -1,6 +1,6 @@
 use anyhow::Context;
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use fantoccini::elements::Element;
 use fantoccini::Client;
 use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
@@ -38,6 +38,13 @@ struct GameResult {
     generated: DateTime<Local>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+
+enum Driver {
+    Chromium,
+    Firefox,
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -50,13 +57,20 @@ struct Cli {
     /// JSON output file
     output: PathBuf,
 
+    /// Browser driver
+    driver: Driver,
+
     /// Refresh interval
     #[arg(short, long, default_value_t = 30)]
     refresh: u64,
 }
 
-fn start_driver() -> anyhow::Result<Child> {
-    let driver = Command::new("chromedriver")
+fn start_driver(driver: Driver) -> anyhow::Result<Child> {
+    let cmd = match driver {
+        Driver::Chromium => "chromedriver",
+        Driver::Firefox => "geckodriver",
+    };
+    let driver = Command::new(cmd)
         .arg(format!("--port={}", DRIVER_PORT))
         .stderr(Stdio::null())
         .stdout(Stdio::null())
@@ -245,10 +259,13 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let mut driver = start_driver()?;
+    let mut driver = start_driver(cli.driver)?;
 
-    let cap: Capabilities =
-        serde_json::from_str(r#"{"goog:chromeOptions":{"args":["--headless"]}}"#).unwrap();
+    let cap_string = match cli.driver {
+        Driver::Chromium => r#"{"goog:chromeOptions":{"args":["--headless"]}}"#,
+        Driver::Firefox => r#"{"moz:firefoxOptions": {"args": ["--headless"]}}"#,
+    };
+    let cap: Capabilities = serde_json::from_str(cap_string).unwrap();
 
     let mut c = ClientBuilder::rustls()?
         .capabilities(cap)
