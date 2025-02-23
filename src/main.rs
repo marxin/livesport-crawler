@@ -76,7 +76,7 @@ fn start_driver(driver: Driver) -> anyhow::Result<Child> {
         .stdout(Stdio::null())
         .spawn()?;
 
-    thread::sleep(Duration::from_millis(300));
+    thread::sleep(Duration::from_millis(2000));
     Ok(driver)
 }
 
