@@ -12,6 +12,7 @@ use std::{
     thread,
     time::Duration,
 };
+use sysinfo::System;
 use tokio::signal;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
@@ -63,14 +64,32 @@ struct Cli {
     /// Refresh interval
     #[arg(short, long, default_value_t = 30)]
     refresh: u64,
+
+    #[arg(short, long, default_value_t = false)]
+    kill_previous: bool,
+}
+
+fn get_driver_cmd(driver: Driver) -> &'static str {
+    match driver {
+        Driver::Chromium => "chromedriver",
+        Driver::Firefox => "geckodriver",
+    }
+}
+
+fn kill_previous_driver(driver: Driver) {
+    let drive_cmd = get_driver_cmd(driver);
+
+    let s = System::new_all();
+    for (pid, process) in s.processes() {
+        if process.name() == drive_cmd {
+            process.kill();
+            debug!("Killing PID {}", pid);
+        }
+    }
 }
 
 fn start_driver(driver: Driver) -> anyhow::Result<Child> {
-    let cmd = match driver {
-        Driver::Chromium => "chromedriver",
-        Driver::Firefox => "geckodriver",
-    };
-    let driver = Command::new(cmd)
+    let driver = Command::new(get_driver_cmd(driver))
         .arg(format!("--port={}", DRIVER_PORT))
         .stderr(Stdio::null())
         .stdout(Stdio::null())
@@ -258,6 +277,10 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
+
+    if cli.kill_previous {
+        kill_previous_driver(cli.driver);
+    }
 
     let mut driver = start_driver(cli.driver)?;
 
