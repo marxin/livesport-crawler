@@ -16,7 +16,7 @@ use std::{
 use sysinfo::System;
 use tokio::signal;
 use tokio::time::sleep;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
@@ -84,7 +84,7 @@ fn kill_previous_driver(driver: Driver) {
     for (pid, process) in s.processes() {
         if process.name() == drive_cmd {
             process.kill();
-            debug!("Killing PID {}", pid);
+            warn!("Killing PID {}", pid);
         }
     }
 }
