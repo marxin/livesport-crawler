@@ -15,7 +15,7 @@ use std::{
 use sysinfo::System;
 use tokio::signal;
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
 use url::Url;
 
 const DRIVER_PORT: u16 = 9515;
@@ -302,8 +302,9 @@ async fn main() -> anyhow::Result<()> {
                 info!("latest match = {latest_match:?}");
                 serde_json::to_writer_pretty(File::create(cli.output.clone())?, &latest_match)?;
             }
-            Err(error) => {
-                warn!("got error: {error}");
+            Err(err) => {
+                error!("got error: {err}");
+                break;
             }
         }
 
