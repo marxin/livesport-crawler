@@ -7,6 +7,7 @@ use fantoccini::{wd::Capabilities, ClientBuilder, Locator};
 use serde::Serialize;
 use std::fs::File;
 use std::path::PathBuf;
+use std::process::exit;
 use std::{
     process::{Child, Command, Stdio},
     thread,
@@ -296,7 +297,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("failed to connect to WebDriver");
 
-    loop {
+    let exit_code = loop {
         match get_score(&mut c, &cli.url, &cli.team_name).await {
             Ok(latest_match) => {
                 info!("latest match = {latest_match:?}");
@@ -304,25 +305,25 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(err) => {
                 error!("got error: {err}");
-                break;
+                break 1;
             }
         }
 
         tokio::select! {
             _ = signal::ctrl_c() => {
                 info!("exitting the main loop");
-                break;
+                break 0;
             },
             _ = tokio::time::sleep(Duration::from_secs(cli.refresh)) => {
             }
         }
-    }
+    };
 
     driver.kill().unwrap();
 
     c.close().await?;
 
-    Ok(())
+    exit(exit_code);
 }
 
 #[cfg(test)]

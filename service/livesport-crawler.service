@@ -5,7 +5,7 @@ Description=Script for crawling of livescore.com site
 Type=simple
 User=marxin
 Group=marxin
-ExecStart=/home/marxin/livesport-crawler https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/ "Sparta Praha" /var/www/html/sparta.json
+ExecStart=/home/marxin/livesport-crawler https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/ "Sparta Praha" /var/www/html/sparta.json -k
 Restart=on-failure
 
 [Install]
