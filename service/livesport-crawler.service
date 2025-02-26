@@ -5,8 +5,11 @@ Description=Script for crawling of livescore.com site
 Type=simple
 User=marxin
 Group=marxin
-ExecStart=/home/marxin/livesport-crawler https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/ "Sparta Praha" /var/www/html/sparta.json -k
+ExecStart=/home/marxin/Programming/livesport-crawler/target/debug/livesport-crawler https://www.livesport.cz/tym/sparta-praha/zcG9U7N6/ "Sparta Praha" /var/www/html/sparta.json firefox -k
 Restart=on-failure
+Wants=network-online.target
+After=network-online.target
+RestartSec=60
 
 [Install]
 WantedBy=default.target
