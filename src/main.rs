@@ -63,7 +63,7 @@ struct Cli {
     driver: Driver,
 
     /// Refresh interval
-    #[arg(short, long, default_value_t = 30)]
+    #[arg(short, long, default_value_t = 60)]
     refresh: u64,
 
     #[arg(short, long, default_value_t = false)]
@@ -96,7 +96,7 @@ fn start_driver(driver: Driver) -> anyhow::Result<Child> {
         .stdout(Stdio::null())
         .spawn()?;
 
-    thread::sleep(Duration::from_millis(2000));
+    thread::sleep(Duration::from_secs(2));
     Ok(driver)
 }
 
