@@ -88,7 +88,7 @@ fn kill_previous_driver(driver: Driver) {
 
     let s = System::new_all();
     for (pid, process) in s.processes() {
-        if commands_to_kill.contains(process.name()) {
+        if commands_to_kill.contains(&process.name().to_string_lossy().as_ref()) {
             process.kill();
             warn!("Killing PID {}", pid);
         }
