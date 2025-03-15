@@ -78,11 +78,17 @@ fn get_driver_cmd(driver: Driver) -> &'static str {
 }
 
 fn kill_previous_driver(driver: Driver) {
-    let drive_cmd = get_driver_cmd(driver);
+    let commands_to_kill = vec![
+        get_driver_cmd(driver),
+        match driver {
+            Driver::Chromium => "chrome",
+            Driver::Firefox => "firefox",
+        },
+    ];
 
     let s = System::new_all();
     for (pid, process) in s.processes() {
-        if process.name() == drive_cmd {
+        if commands_to_kill.contains(process.name()) {
             process.kill();
             warn!("Killing PID {}", pid);
         }
